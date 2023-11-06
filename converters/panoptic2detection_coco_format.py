@@ -41,6 +41,13 @@ def convert_panoptic_to_detection_coco_format_single_core(
                                                                  working_idx,
                                                                  len(annotations_set)))
 
+        has_things = False
+        for segm_info in annotation['segments_info']:
+            has_things |= categories[segm_info['category_id']]['isthing']
+
+        if has_things:
+            continue        
+
         file_name = '{}.png'.format(annotation['file_name'].rsplit('.')[0])
         try:
             pan_format = np.array(
@@ -51,8 +58,9 @@ def convert_panoptic_to_detection_coco_format_single_core(
         pan = rgb2id(pan_format)
 
         for segm_info in annotation['segments_info']:
-            if things_only and categories[segm_info['category_id']]['isthing'] != 1:
-                continue
+            # if things_only and categories[segm_info['category_id']]['isthing'] != 1:
+            # if categories[segm_info['category_id']]['isthing'] != 0:
+            #     continue
             mask = (pan == segm_info['id']).astype(np.uint8)
             mask = np.expand_dims(mask, axis=2)
             segm_info.pop('id')
@@ -107,17 +115,23 @@ def convert_panoptic_to_detection_coco_format(input_json_file,
         processes.append(p)
     annotations_coco_detection = []
     for p in processes:
-        annotations_coco_detection.extend(p.get())
+        r = p.get()
+        if len(r) > 0:
+            annotations_coco_detection.extend(r)
     for idx, ann in enumerate(annotations_coco_detection):
         ann['id'] = idx
 
+    im_ids = {img_info['id']: i for i, img_info in enumerate(d_coco['images'])}
+    d_coco['images'] = [d_coco['images'][im_ids[acd['image_id']]] for acd in annotations_coco_detection]
+        
     d_coco['annotations'] = annotations_coco_detection
     categories_coco_detection = []
     for category in d_coco['categories']:
         if things_only and category['isthing'] != 1:
             continue
         category.pop('isthing')
-        category.pop('color')
+        if 'color' in category:
+            category.pop('color')
         categories_coco_detection.append(category)
     d_coco['categories'] = categories_coco_detection
     save_json(d_coco, output_json_file)
